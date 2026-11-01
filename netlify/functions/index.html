@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MHM - Chat en direct</title>
+  <!-- Chargement du client Supabase CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    #chat-box { border: 1px solid #ccc; height: 350px; overflow-y: scroll; padding: 15px; margin-bottom: 15px; border-radius: 8px; }
+    .message { margin-bottom: 10px; padding: 8px 12px; background: #f1f1f1; border-radius: 6px; }
+    .message .time { font-size: 0.8em; color: #666; margin-left: 10px; }
+    .input-group { display: flex; gap: 10px; }
+    input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: 10px 20px; background: #0070f3; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #0051a2; }
+  </style>
+</head>
+<body>
+
+  <h2>Chat en Direct</h2>
+
+  <div id="chat-box"></div>
+
+  <div class="input-group">
+    <input type="text" id="username" placeholder="Ton pseudo" style="max-width: 120px;" />
+    <input type="text" id="message-input" placeholder="Écris ton message ici..." />
+    <button onclick="sendMessage()">Envoyer</button>
+  </div>
+
+  <script>
+    // ⚠️ REMPLACE CES DEUX VARIABLES PAR TES CLÉS SUPABASE
+    // (Disponibles dans Supabase -> Project Settings -> API)
+    const SUPABASE_URL = 'https://TON_PROJET.supabase.co';
+    const SUPABASE_ANON_KEY = 'TA_CLE_ANON_PUBLIC_KEY';
+
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const chatBox = document.getElementById('chat-box');
+    const messageInput = document.getElementById('message-input');
+    const usernameInput = document.getElementById('username');
+
+    // 1. Charger les anciens messages au démarrage
+    async function fetchMessages() {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) console.error('Erreur :', error);
+      else {
+        chatBox.innerHTML = '';
+        data.forEach(appendMessage);
+        scrollToBottom();
+      }
+    }
+
+    // 2. Afficher un message dans la boîte de chat
+    function appendMessage(msg) {
+      const msgElement = document.createElement('div');
+      msgElement.className = 'message';
+      const time = new Date(msg.created_at).toLocaleTimeString();
+      msgElement.innerHTML = `<strong>${msg.user_name || 'Anonyme'} :</strong> ${msg.content} <span class="time">${time}</span>`;
+      chatBox.appendChild(msgElement);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 3. Envoyer un nouveau message à la base de données
+    async function sendMessage() {
+      const content = messageInput.value.trim();
+      const user_name = usernameInput.value.trim() || 'Anonyme';
+
+      if (!content) return;
+
+      messageInput.value = '';
+
+      const { error } = await supabase
+        .from('messages')
+        .insert([{ content, user_name }]);
+
+      if (error) alert("Erreur d'envoi : " + error.message);
+    }
+
+    // Permettre l'envoi avec la touche Entrée
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // 4. ÉCOUTER LES NOUVEAUX MESSAGES EN TEMPS RÉEL
+    supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          appendMessage(payload.new);
+        }
+      )
+      .subscribe();
+
+    // Initialisation
+    fetchMessages();
+  </script>
+</body>
+</html>
